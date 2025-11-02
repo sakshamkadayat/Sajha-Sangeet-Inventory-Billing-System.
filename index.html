@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <title>Sajha Sangeet Manager</title>
+  <style>
+    /* Basic styling */
+    body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 12px; color:#222; }
+    .tabs { display:flex; gap:8px; margin-bottom:12px; }
+    .tab { padding:8px 12px; background:#efefef; border-radius:6px; cursor:pointer; user-select:none; }
+    .tab.active { background:#2b6cb0; color:white; }
+    .panel { display:none; }
+    .panel.active { display:block; }
+    .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+    .col { flex:1; }
+    input, select, textarea { padding:6px; width:100%; box-sizing:border-box; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+    th, td { padding:6px; border-bottom:1px solid #eee; text-align:left; }
+    button { padding:6px 10px; border-radius:6px; border:0; background:#2b6cb0; color:white; cursor:pointer; }
+    .btn-danger { background:#e53e3e; }
+    .small { font-size:12px; padding:4px 8px; }
+    .flex { display:flex; gap:8px; }
+    .summary { margin-top:12px; }
+    .chart { height:220px; }
+    .table-wrap { max-height:300px; overflow:auto; border:1px solid #f0f0f0; padding:6px; border-radius:6px; }
+    .center { text-align:center; }
+  </style>
+  <script>
+    // minimal client-side code using google.script.run
+    let state = { inventory:[], customers:[], sales:[], cart:[] };
+
+    function showTab(tabId) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.getElementById('tab-' + tabId).classList.add('active');
+      document.getElementById('panel-' + tabId).classList.add('active');
+      if (tabId === 'Sales') loadSalesUI();
+      if (tabId === 'Reports') renderReports();
+    }
+
+    function init() {
+      showTab('Inventory');
+      loadAll();
+    }
+
+    function loadAll() {
+      google.script.run.withSuccessHandler(function(inv){ state.inventory = inv; renderInventoryTable(); populateInventorySelect(); }).getInventory();
+      google.script.run.withSuccessHandler(function(c){ state.customers = c; renderCustomers(); populateCustomerSelect(); }).getCustomers();
+      google.script.run.withSuccessHandler(function(s){ state.sales = s; renderSalesTable(); }).getSales();
+    }
+
+    /* ---------- Inventory UI ---------- */
+    function renderInventoryTable() {
+      const wrap = document.getElementById('inventory-table');
+      if (!state.inventory) { wrap.innerHTML = 'No data'; return; }
+      let html = '<div class="table-wrap"><table><thead><tr><th>ItemID</th><th>ItemName</th><th>Category</th><th>SellPrice</th><th>Stock</th><th>Actions</th></tr></thead><tbody>';
+      state.inventory.forEach(it=>{
+        html += `<tr>
+          <td>${it.ItemID}</td>
+          <td>${it.ItemName}</td>
+          <td>${it.Category}</td>
+          <td style="text-align:right">${Number(it.SellPrice||0).toLocaleString()}</td>
+          <td style="text-align:center">${it.StockQty}</td>
+          <td>
+            <button onclick="editInventory('${it.ItemID}')">Edit</button>
+            <button class="btn-danger" onclick="deleteInventory('${it.ItemID}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+      html += '</tbody></table></div>';
+      wrap.innerHTML = html;
+    }
+
+    function addInventory() {
+      const it = {
+        ItemName: document.getElementById('inv-name').value,
+        Category: document.getElementById('inv-cat').value,
+        BuyPrice: document.getElementById('inv-buy').value,
+        SellPrice: document.getElementById('inv-sell').value,
+        StockQty: document.getElementById('inv-stock').value,
+        ReorderLevel: document.getElementById('inv-reorder').value,
+        Notes: document.getElementById('inv-notes').value
+      };
+      google.script.run.withSuccessHandler(res=>{
+        alert('Item added');
+        clearInventoryForm();
+        loadAll();
+      }).addInventory(it);
+    }
+
+    function editInventory(id) {
+      const it = state.inventory.find(x=>x.ItemID==id);
+      if (!it) return alert('Item not found');
+      document.getElementById('inv-name').value = it.ItemName;
+      document.getElementById('inv-cat').value = it.Category;
+      document.getElementById('inv-buy').value = it.BuyPrice;
+      document.getElementById('inv-sell').value = it.SellPrice;
+      document.getElementById('inv-stock').value = it.StockQty;
+      document.getElementById('inv-reorder').value = it.ReorderLevel;
+      document.getElementById('inv-notes').value = it.Notes;
+      document.getElementById('inv-save').style.display = 'inline-block';
+      document.getElementById('inv-add').style.display = 'none';
+      document.getElementById('inv-id').value = it.ItemID;
+    }
+
+    function saveInventoryUpdate() {
+      const id = document.getElementById('inv-id').value;
+      const updates = {
+        "ItemName": document.getElementById('inv-name').value,
+        "Category": document.getElementById('inv-cat').value,
+        "BuyPrice": Number(document.getElementById('inv-buy').value||0),
+        "SellPrice": Number(document.getElementById('inv-sell').value||0),
+        "StockQty": Number(document.getElementById('inv-stock').value||0),
+        "ReorderLevel": Number(document.getElementById('inv-reorder').value||0),
+        "Notes": document.getElementById('inv-notes').value
+      };
+      google.script.run.withSuccessHandler(res=>{
+        alert('Item updated');
+        clearInventoryForm();
+        loadAll();
+      }).updateInventory(id, updates);
+    }
+
+    function deleteInventory(id) {
+      if (!confirm('Delete item?')) return;
+      google.script.run.withSuccessHandler(res=>{
+        alert('Deleted');
+        loadAll();
+      }).deleteInventory(id);
+    }
+
+    function clearInventoryForm() {
+      ['inv-name','inv-cat','inv-buy','inv-sell','inv-stock','inv-reorder','inv-notes','inv-id'].forEach(id=>document.getElementById(id).value='');
+      document.getElementById('inv-save').style.display = 'none';
+      document.getElementById('inv-add').style.display = 'inline-block';
+    }
+
+    /* ---------- Customers UI ---------- */
+    function renderCustomers() {
+      const wrap = document.getElementById('customers-table');
+      let html = '<div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Actions</th></tr></thead><tbody>';
+      state.customers.forEach(c=>{
+        html += `<tr><td>${c.CustomerID}</td><td>${c.Name}</td><td>${c.Phone||''}</td><td>${c.Email||''}</td>
+          <td><button onclick="editCustomer('${c.CustomerID}')">Edit</button>
+          <button class="btn-danger" onclick="deleteCustomer('${c.CustomerID}')">Delete</button></td></tr>`;
+      });
+      html += '</tbody></table></div>';
+      wrap.innerHTML = html;
+    }
+
+    function addCustomer() {
+      const c = {
+        Name: document.getElementById('cust-name').value,
+        Phone: document.getElementById('cust-phone').value,
+        Email: document.getElementById('cust-email').value,
+        Address: document.getElementById('cust-address').value,
+        Notes: document.getElementById('cust-notes').value
+      };
+      google.script.run.withSuccessHandler(res=>{
+        alert('Customer added');
+        loadAll();
+        ['cust-name','cust-phone','cust-email','cust-address','cust-notes'].forEach(id=>document.getElementById(id).value='');
+      }).addCustomer(c);
+    }
+
+    function editCustomer(id) {
+      const c = state.customers.find(x=>x.CustomerID==id);
+      if (!c) return;
+      document.getElementById('cust-name').value = c.Name;
+      document.getElementById('cust-phone').value = c.Phone;
+      document.getElementById('cust-email').value = c.Email;
+      document.getElementById('cust-address').value = c.Address;
+      document.getElementById('cust-notes').value = c.Notes;
+      document.getElementById('cust-id').value = c.CustomerID;
+      document.getElementById('cust-save').style.display='inline-block';
+      document.getElementById('cust-add').style.display='none';
+    }
+
+    function saveCustomerUpdate() {
+      const id = document.getElementById('cust-id').value;
+      const updates = {
+        "Name": document.getElementById('cust-name').value,
+        "Phone": document.getElementById('cust-phone').value,
+        "Email": document.getElementById('cust-email').value,
+        "Address": document.getElementById('cust-address').value,
+        "Notes": document.getElementById('cust-notes').value
+      };
+      google.script.run.withSuccessHandler(res=>{
+        alert('Customer updated');
+        loadAll();
+        ['cust-name','cust-phone','cust-email','cust-address','cust-notes','cust-id'].forEach(id=>document.getElementById(id).value='');
+        document.getElementById('cust-save').style.display='none';
+        document.getElementById('cust-add').style.display='inline-block';
+      }).updateCustomer(id, updates);
+    }
+
+    function deleteCustomer(id) {
+      if (!confirm('Delete customer?')) return;
+      google.script.run.withSuccessHandler(res=>{
+        alert('Deleted');
+        loadAll();
+      }).deleteCustomer(id);
+    }
+
+    /* ---------- Sales / Billing UI ---------- */
+    function populateInventorySelect() {
+      const sel = document.getElementById('sale-item-select');
+      sel.innerHTML = '<option value="">-- select item --</option>';
+      state.inventory.forEach(it=>{
+        sel.innerHTML += `<option value="${it.ItemID}" data-price="${it.SellPrice}" data-name="${escapeHtml(it.ItemName)}" data-stock="${it.StockQty}">${it.ItemName} (Stock: ${it.StockQty})</option>`;
+      });
+    }
+    function populateCustomerSelect() {
+      const sel = document.getElementById('sale-customer');
+      sel.innerHTML = '<option value="">Walk-in</option>';
+      state.customers.forEach(c=>{
+        sel.innerHTML += `<option value="${c.CustomerID}">${c.Name}</option>`;
+      });
+    }
+
+    function addToCart() {
+      const sel = document.getElementById('sale-item-select');
+      const id = sel.value;
+      if (!id) return alert('Select item');
+      const price = Number(sel.selectedOptions[0].getAttribute('data-price')||0);
+      const name = sel.selectedOptions[0].getAttribute('data-name');
+      const stock = Number(sel.selectedOptions[0].getAttribute('data-stock')||0);
+      const qty = Number(document.getElementById('sale-qty').value||1);
+      if (qty <=0) return alert('Qty must be > 0');
+      if (qty > stock) return alert('Qty exceeds stock available: ' + stock);
+      const existing = state.cart.find(x=>x.ItemID==id);
+      if (existing) existing.Qty += qty;
+      else state.cart.push({ItemID:id, ItemName:name, UnitPrice:price, Qty:qty});
+      renderCart();
+    }
+
+    function renderCart() {
+      const wrap = document.getElementById('cart');
+      if (!state.cart.length) { wrap.innerHTML = '<div class="center">Cart is empty</div>'; return; }
+      let html = '<table><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Subtotal</th><th></th></tr></thead><tbody>';
+      let total = 0;
+      state.cart.forEach((it, idx)=>{
+        const sub = (it.UnitPrice||0)*(it.Qty||0);
+        total += sub;
+        html += `<tr><td>${it.ItemName}</td><td style="text-align:center">${it.Qty}</td><td style="text-align:right">${Number(it.UnitPrice).toLocaleString()}</td><td style="text-align:right">${Number(sub).toLocaleString()}</td>
+          <td><button onclick="removeFromCart(${idx})" class="small">remove</button></td></tr>`;
+      });
+      html += `<tr><td colspan="3" style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${Number(total).toLocaleString()}</strong></td><td></td></tr>`;
+      html += '</tbody></table>';
+      wrap.innerHTML = html;
+    }
+
+    function removeFromCart(idx) {
+      state.cart.splice(idx,1);
+      renderCart();
+    }
+
+    function clearCart() { state.cart = []; renderCart(); }
+
+    function createSale() {
+      if (!state.cart.length) return alert('Cart empty');
+      const customerEl = document.getElementById('sale-customer');
+      const custId = customerEl.value;
+      const custName = customerEl.selectedOptions[0] ? customerEl.selectedOptions[0].text : "Walk-in";
+      const payload = {
+        CustomerID: custId,
+        CustomerName: custName,
+        Items: state.cart,
+        PaymentMethod: document.getElementById('sale-payment').value || 'Cash',
+        Notes: document.getElementById('sale-notes').value || ''
+      };
+      google.script.run.withSuccessHandler(function(res){
+        if (res.success) {
+          // open printable bill in new window
+          const html = res.billHtml;
+          const win = window.open('', '_blank');
+          win.document.write(html);
+          win.document.close();
+          // reload data
+          clearCart(); loadAll();
+          alert('Sale recorded: ' + res.saleId);
+        } else {
+          alert('Error: ' + (res.message || 'unknown'));
+        }
+      }).withFailureHandler(function(err){
+        alert('Error: ' + err.message);
+      }).createSale(payload);
+    }
+
+    /* ---------- Sales list ---------- */
+    function renderSalesTable() {
+      const wrap = document.getElementById('sales-table');
+      let html = '<div class="table-wrap"><table><thead><tr><th>SaleID</th><th>Date</th><th>Customer</th><th>Total</th></tr></thead><tbody>';
+      state.sales.forEach(s=>{
+        const total = Number(s.TotalAmount||0);
+        html += `<tr><td>${s.SaleID}</td><td>${new Date(s.Date).toLocaleString()}</td><td>${s.CustomerName||''}</td><td style="text-align:right">${total.toLocaleString()}</td></tr>`;
+      });
+      html += '</tbody></table></div>';
+      wrap.innerHTML = html;
+    }
+
+    /* ---------- Reports ---------- */
+    function renderReports() {
+      google.script.run.withSuccessHandler(function(data){
+        // salesByDate: array of [date, value]
+        const sb = document.getElementById('report-sales');
+        if (!data.salesByDate || !data.salesByDate.length) {
+          sb.innerHTML = '<div class="center">No sales data</div>';
+        } else {
+          // simple table
+          let html = '<table><thead><tr><th>Date</th><th>Total Sales</th></tr></thead><tbody>';
+          data.salesByDate.forEach(r=> html += `<tr><td>${r[0]}</td><td style="text-align:right">${Number(r[1]).toLocaleString()}</td></tr>`);
+          html += '</tbody></table>';
+          sb.innerHTML = html;
+        }
+        const low = document.getElementById('report-lowstock');
+        if (!data.lowStock || !data.lowStock.length) {
+          low.innerHTML = '<div class="center">No low stock items</div>';
+        } else {
+          let html = '<table><thead><tr><th>ItemID</th><th>Item</th><th>Stock</th><th>Reorder Level</th></tr></thead><tbody>';
+          data.lowStock.forEach(i => html += `<tr><td>${i.ItemID}</td><td>${i.ItemName}</td><td style="text-align:center">${i.StockQty}</td><td style="text-align:center">${i.ReorderLevel}</td></tr>`);
+          html += '</tbody></table>';
+          low.innerHTML = html;
+        }
+      }).getSummaryData();
+    }
+
+    /* helper */
+    function escapeHtml(s){ if(!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+    // loadSalesUI called when switching to Sales tab (to repopulate selects)
+    function loadSalesUI(){ populateInventorySelect(); populateCustomerSelect(); renderCart(); }
+
+    window.onload = init;
+  </script>
+</head>
+<body>
+  <h3>Sajha Sangeet — Shop Manager</h3>
+  <div class="tabs">
+    <div id="tab-Inventory" class="tab active" onclick="showTab('Inventory')">Inventory</div>
+    <div id="tab-Customers" class="tab" onclick="showTab('Customers')">Customers</div>
+    <div id="tab-Sales" class="tab" onclick="showTab('Sales')">Sales / Billing</div>
+    <div id="tab-Reports" class="tab" onclick="showTab('Reports')">Reports</div>
+  </div>
+
+  <!-- Inventory Panel -->
+  <div id="panel-Inventory" class="panel active">
+    <h4>Inventory</h4>
+    <div class="row">
+      <div class="col">
+        <input id="inv-name" placeholder="Item name">
+      </div>
+      <div style="width:150px"><input id="inv-cat" placeholder="Category"></div>
+      <div style="width:120px"><input id="inv-buy" placeholder="Buy price"></div>
+      <div style="width:120px"><input id="inv-sell" placeholder="Sell price"></div>
+    </div>
+    <div class="row">
+      <div style="width:120px"><input id="inv-stock" placeholder="Stock qty" type="number"></div>
+      <div style="width:120px"><input id="inv-reorder" placeholder="Reorder level" type="number"></div>
+      <div class="col"><input id="inv-notes" placeholder="Notes"></div>
+      <input type="hidden" id="inv-id">
+      <div><button id="inv-add" onclick="addInventory()">Add</button>
+      <button id="inv-save" style="display:none" onclick="saveInventoryUpdate()">Save</button>
+      <button class="small" onclick="clearInventoryForm()">Clear</button></div>
+    </div>
+    <div id="inventory-table"></div>
+  </div>
+
+  <!-- Customers Panel -->
+  <div id="panel-Customers" class="panel">
+    <h4>Customers</h4>
+    <div class="row">
+      <div class="col"><input id="cust-name" placeholder="Customer name"></div>
+      <div style="width:150px"><input id="cust-phone" placeholder="Phone"></div>
+    </div>
+    <div class="row">
+      <div class="col"><input id="cust-email" placeholder="Email"></div>
+      <div class="col"><input id="cust-address" placeholder="Address"></div>
+      <div><input type="hidden" id="cust-id"><button id="cust-add" onclick="addCustomer()">Add</button><button id="cust-save" style="display:none" onclick="saveCustomerUpdate()">Save</button></div>
+    </div>
+    <div class="row"><div class="col"><input id="cust-notes" placeholder="Notes"></div></div>
+    <div id="customers-table"></div>
+  </div>
+
+  <!-- Sales Panel -->
+  <div id="panel-Sales" class="panel">
+    <h4>Sales / Billing</h4>
+    <div class="row">
+      <div style="width:300px"><select id="sale-item-select"></select></div>
+      <div style="width:100px"><input id="sale-qty" type="number" value="1" min="1"></div>
+      <div><button onclick="addToCart()">Add to cart</button></div>
+      <div style="flex:1"></div>
+    </div>
+    <div class="row">
+      <div style="width:250px"><select id="sale-customer"></select></div>
+      <div style="width:160px"><select id="sale-payment"><option>Cash</option><option>Card</option><option>MobilePay</option></select></div>
+      <div class="col"><input id="sale-notes" placeholder="Notes (optional)"></div>
+    </div>
+    <div id="cart"></div>
+    <div style="margin-top:8px;">
+      <button onclick="createSale()">Complete Sale & Print Bill</button>
+      <button onclick="clearCart()" class="small">Clear Cart</button>
+    </div>
+
+    <h4 style="margin-top:18px">Recent Sales</h4>
+    <div id="sales-table"></div>
+  </div>
+
+  <!-- Reports Panel -->
+  <div id="panel-Reports" class="panel">
+    <h4>Reports</h4>
+    <div class="row">
+      <div class="col">
+        <h5>Sales by Date</h5>
+        <div id="report-sales"></div>
+      </div>
+      <div class="col">
+        <h5>Low Stock Items (≤ Reorder Level)</h5>
+        <div id="report-lowstock"></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:12px; font-size:12px; color:#666;">Tip: use "Initialize Sheets" from the Sajha Sangeet menu once to create required sheets.</div>
+</body>
+</html>
